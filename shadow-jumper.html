@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shadow Jumper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            color: white;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #gameContainer {
+            width: 800px;
+            height: 600px;
+            position: relative;
+            border: 2px solid #333;
+            border-radius: 10px;
+            overflow: hidden;
+            background: linear-gradient(180deg, #0a0a0a 0%, #1a1a1a 100%);
+        }
+
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            z-index: 10;
+        }
+
+        #gameTitle {
+            font-size: 42px;
+            font-weight: bold;
+            color: #ff44ff;
+            text-shadow: 0 0 20px #ff44ff, 0 0 40px #cc44cc, 0 0 60px #aa22aa;
+            margin-bottom: 10px;
+            letter-spacing: 4px;
+            font-family: 'Impact', 'Arial Black', Arial, sans-serif;
+            text-transform: uppercase;
+        }
+
+        #score {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffff00;
+            text-shadow: 0 0 15px #ffff00, 0 0 30px #cccc00;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            border: 2px solid #ff4444;
+            display: none;
+            z-index: 20;
+        }
+
+        #gameOver h2 {
+            color: #ff4444;
+            margin-bottom: 15px;
+            font-size: 32px;
+            text-shadow: 0 0 10px #ff4444;
+        }
+
+        #restartBtn {
+            background: linear-gradient(45deg, #00ff88, #00cc66);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: all 0.3s ease;
+        }
+
+        #restartBtn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px #00ff88;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+        }
+
+        .instruction-key {
+            background: #333;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 0 2px;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="ui">
+            <div id="gameTitle">SHADOW JUMPER</div>
+            <div id="score">Score: 0</div>
+        </div>
+
+        <div id="gameOver">
+            <h2>Game Over!</h2>
+            <p>Your shadow fell into the void...</p>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <button id="restartBtn">Jump Again</button>
+        </div>
+
+        <div id="instructions">
+            Press <span class="instruction-key">SPACE</span> to jump • Platform disappears after 0.35 seconds • Don't fall!
+        </div>
+    </div>
+
+    <script>
+        class ShadowJumper {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.gameOverScreen = document.getElementById('gameOver');
+                this.scoreElement = document.getElementById('score');
+                this.finalScoreElement = document.getElementById('finalScore');
+                
+                this.reset();
+                this.setupEventListeners();
+                this.gameLoop();
+            }
+
+            reset() {
+                this.player = {
+                    x: 100,
+                    y: 400,
+                    width: 20,
+                    height: 40,
+                    velocityY: 0,
+                    isJumping: false,
+                    onGround: true
+                };
+
+                this.platforms = [
+                    { x: 50, y: 450, width: 100, height: 20, opacity: 1, fadeTime: 0 }
+                ];
+
+                this.gravity = 0.8;
+                this.jumpPower = -15;
+                this.gameRunning = true;
+                this.score = 0;
+                this.lastJumpTime = 0;
+                this.gameOverScreen.style.display = 'none';
+            }
+
+            setupEventListeners() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        if (this.gameRunning) {
+                            this.jump();
+                        }
+                    }
+                });
+
+                document.getElementById('restartBtn').addEventListener('click', () => {
+                    this.reset();
+                });
+
+                // Mobile touch support
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (this.gameRunning) {
+                        this.jump();
+                    }
+                });
+            }
+
+            jump() {
+                if (this.player.onGround && !this.player.isJumping) {
+                    this.player.velocityY = this.jumpPower;
+                    this.player.isJumping = true;
+                    this.player.onGround = false;
+                    
+                    // Start platform fade timer when player jumps
+                    this.platforms[0].fadeTime = Date.now();
+                    
+                    // Move platform up slightly with each jump
+                    this.platforms[0].y -= 15;
+                    
+                    this.score += 10;
+                    this.scoreElement.textContent = `Score: ${this.score}`;
+                }
+            }
+
+            updatePlayer() {
+                // Apply gravity
+                this.player.velocityY += this.gravity;
+                this.player.y += this.player.velocityY;
+
+                // Check platform collisions
+                this.player.onGround = false;
+                
+                for (let platform of this.platforms) {
+                    if (platform.opacity <= 0) continue;
+                    
+                    if (this.player.x + this.player.width > platform.x &&
+                        this.player.x < platform.x + platform.width &&
+                        this.player.y + this.player.height > platform.y &&
+                        this.player.y + this.player.height < platform.y + platform.height + 10 &&
+                        this.player.velocityY >= 0) {
+                        
+                        this.player.y = platform.y - this.player.height;
+                        this.player.velocityY = 0;
+                        this.player.isJumping = false;
+                        this.player.onGround = true;
+                        break;
+                    }
+                }
+
+                // Move camera to follow player
+                this.cameraX = this.player.x - 200;
+
+                // Check if player fell
+                if (this.player.y > 600) {
+                    this.gameOver();
+                }
+            }
+
+            updatePlatforms() {
+                const currentTime = Date.now();
+                
+                // Update platform opacity (fade after 0.8 seconds)
+                for (let platform of this.platforms) {
+                    if (platform.fadeTime > 0) {
+                        const timeSinceFade = currentTime - platform.fadeTime;
+                        if (timeSinceFade > 350) { // 0.35 seconds
+                            platform.opacity = Math.max(0, 1 - (timeSinceFade - 350) / 400);
+                        }
+                    }
+                }
+
+                // If platform completely faded, game over
+                if (this.platforms[0] && this.platforms[0].opacity <= 0) {
+                    this.gameOver();
+                }
+            }
+
+            drawPlayer() {
+                this.ctx.save();
+                this.ctx.translate(-this.cameraX, 0);
+                
+                // Draw shadow stick figure
+                this.ctx.fillStyle = '#000';
+                this.ctx.strokeStyle = '#333';
+                this.ctx.lineWidth = 3;
+                
+                const x = this.player.x + this.player.width / 2;
+                const y = this.player.y;
+                
+                // Head
+                this.ctx.beginPath();
+                this.ctx.arc(x, y + 8, 6, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Body
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, y + 14);
+                this.ctx.lineTo(x, y + 28);
+                this.ctx.stroke();
+                
+                // Arms
+                this.ctx.beginPath();
+                this.ctx.moveTo(x - 8, y + 20);
+                this.ctx.lineTo(x + 8, y + 20);
+                this.ctx.stroke();
+                
+                // Legs
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, y + 28);
+                this.ctx.lineTo(x - 6, y + 40);
+                this.ctx.moveTo(x, y + 28);
+                this.ctx.lineTo(x + 6, y + 40);
+                this.ctx.stroke();
+                
+                this.ctx.restore();
+            }
+
+            drawPlatforms() {
+                this.ctx.save();
+                this.ctx.translate(-this.cameraX, 0);
+                
+                for (let platform of this.platforms) {
+                    if (platform.opacity <= 0) continue;
+                    
+                    this.ctx.globalAlpha = platform.opacity;
+                    
+                    // Platform glow effect
+                    this.ctx.shadowColor = '#00ff88';
+                    this.ctx.shadowBlur = 10;
+                    
+                    this.ctx.fillStyle = '#00ff88';
+                    this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                    
+                    // Platform border
+                    this.ctx.shadowBlur = 0;
+                    this.ctx.strokeStyle = '#00cc66';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+                }
+                
+                this.ctx.globalAlpha = 1;
+                this.ctx.restore();
+            }
+
+            drawBackground() {
+                // Much darker deep space gradient
+                const gradient = this.ctx.createRadialGradient(400, 300, 0, 400, 300, 800);
+                gradient.addColorStop(0, '#050a0f');
+                gradient.addColorStop(0.3, '#0a0f1a');
+                gradient.addColorStop(0.6, '#0f1520');
+                gradient.addColorStop(0.8, '#0a0a15');
+                gradient.addColorStop(1, '#000000');
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, 800, 600);
+
+                // Darker nebula clouds
+                for (let i = 0; i < 3; i++) {
+                    const nebulaX = (i * 300 + 150) % 900 - 50;
+                    const nebulaY = (i * 200 + this.score * 0.5) % 800 - 100;
+                    
+                    if (nebulaY > -200 && nebulaY < 800) {
+                        this.ctx.globalAlpha = 0.2;
+                        const nebulaGradient = this.ctx.createRadialGradient(nebulaX, nebulaY, 0, nebulaX, nebulaY, 150);
+                        nebulaGradient.addColorStop(0, `hsl(${240 + i * 30}, 40%, 20%)`);
+                        nebulaGradient.addColorStop(0.5, `hsl(${260 + i * 20}, 30%, 15%)`);
+                        nebulaGradient.addColorStop(1, 'transparent');
+                        
+                        this.ctx.fillStyle = nebulaGradient;
+                        this.ctx.beginPath();
+                        this.ctx.arc(nebulaX, nebulaY, 150, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                }
+
+                // Dimmer starfield with different star types
+                for (let i = 0; i < 200; i++) {
+                    const baseX = (i * 137) % 800;
+                    const baseY = (i * 73) % 1200;
+                    const x = baseX;
+                    const y = (baseY + this.score * 2) % 1200 - 300;
+                    
+                    if (y > -10 && y < 610) {
+                        const starType = i % 4;
+                        const brightness = 0.3 + Math.sin(i + Date.now() * 0.001) * 0.2;
+                        this.ctx.globalAlpha = brightness;
+                        
+                        if (starType === 0) {
+                            // White dwarf stars
+                            this.ctx.fillStyle = '#cccccc';
+                            this.ctx.fillRect(x, y, 1, 1);
+                        } else if (starType === 1) {
+                            // Blue giant stars
+                            this.ctx.fillStyle = '#8899cc';
+                            this.ctx.fillRect(x, y, 1.5, 1.5);
+                        } else if (starType === 2) {
+                            // Red giant stars
+                            this.ctx.fillStyle = '#cc8888';
+                            this.ctx.fillRect(x, y, 2, 2);
+                        } else {
+                            // Yellow stars like our sun
+                            this.ctx.fillStyle = '#cccc88';
+                            this.ctx.fillRect(x, y, 1.2, 1.2);
+                        }
+                    }
+                }
+
+                // Darker distant galaxies
+                for (let i = 0; i < 2; i++) {
+                    const galaxyX = (i * 400 + 200) % 800;
+                    const galaxyY = (i * 300 + this.score * 0.8) % 1000 - 150;
+                    
+                    if (galaxyY > -100 && galaxyY < 700) {
+                        this.ctx.globalAlpha = 0.25;
+                        
+                        // Galaxy spiral
+                        this.ctx.strokeStyle = '#445566';
+                        this.ctx.lineWidth = 1;
+                        this.ctx.beginPath();
+                        for (let angle = 0; angle < Math.PI * 4; angle += 0.1) {
+                            const radius = angle * 3;
+                            const spiralX = galaxyX + Math.cos(angle) * radius;
+                            const spiralY = galaxyY + Math.sin(angle) * radius * 0.3;
+                            if (angle === 0) {
+                                this.ctx.moveTo(spiralX, spiralY);
+                            } else {
+                                this.ctx.lineTo(spiralX, spiralY);
+                            }
+                        }
+                        this.ctx.stroke();
+                    }
+                }
+
+                // Darker planets with subtle atmospheric glow
+                for (let i = 0; i < 3; i++) {
+                    const planetX = (i * 250 + 125) % 800;
+                    const planetY = (i * 200 + this.score * 1.2) % 1000 - 200;
+                    
+                    if (planetY > -100 && planetY < 700) {
+                        const planetSize = 15 + i * 8;
+                        
+                        // Subtle atmospheric glow
+                        this.ctx.globalAlpha = 0.3;
+                        const atmosphereGradient = this.ctx.createRadialGradient(planetX, planetY, planetSize * 0.8, planetX, planetY, planetSize * 1.5);
+                        atmosphereGradient.addColorStop(0, `hsla(${i * 80 + 180}, 40%, 30%, 0.2)`);
+                        atmosphereGradient.addColorStop(1, 'transparent');
+                        this.ctx.fillStyle = atmosphereGradient;
+                        this.ctx.beginPath();
+                        this.ctx.arc(planetX, planetY, planetSize * 1.5, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        // Darker planet surface
+                        this.ctx.globalAlpha = 0.5;
+                        const planetGradient = this.ctx.createRadialGradient(planetX - planetSize * 0.3, planetY - planetSize * 0.3, 0, planetX, planetY, planetSize);
+                        planetGradient.addColorStop(0, `hsl(${i * 80 + 180}, 50%, 35%)`);
+                        planetGradient.addColorStop(0.7, `hsl(${i * 80 + 180}, 40%, 25%)`);
+                        planetGradient.addColorStop(1, `hsl(${i * 80 + 180}, 30%, 15%)`);
+                        
+                        this.ctx.fillStyle = planetGradient;
+                        this.ctx.beginPath();
+                        this.ctx.arc(planetX, planetY, planetSize, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                }
+
+                // Occasional shooting stars with realistic trails
+                if (Math.random() < 0.015) {
+                    const shootingX = Math.random() * 800;
+                    const shootingY = Math.random() * 300;
+                    
+                    this.ctx.globalAlpha = 0.9;
+                    const trailGradient = this.ctx.createLinearGradient(shootingX, shootingY, shootingX + 40, shootingY + 25);
+                    trailGradient.addColorStop(0, '#ffffff');
+                    trailGradient.addColorStop(0.5, '#aaccff');
+                    trailGradient.addColorStop(1, 'transparent');
+                    
+                    this.ctx.strokeStyle = trailGradient;
+                    this.ctx.lineWidth = 3;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(shootingX, shootingY);
+                    this.ctx.lineTo(shootingX + 40, shootingY + 25);
+                    this.ctx.stroke();
+                    
+                    // Bright head
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.beginPath();
+                    this.ctx.arc(shootingX, shootingY, 2, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+
+                this.ctx.globalAlpha = 1;
+            }
+
+            gameOver() {
+                this.gameRunning = false;
+                this.finalScoreElement.textContent = this.score;
+                this.gameOverScreen.style.display = 'block';
+            }
+
+            render() {
+                // Clear canvas
+                this.ctx.fillStyle = '#0a0a0a';
+                this.ctx.fillRect(0, 0, 800, 600);
+                
+                this.drawBackground();
+                this.drawPlatforms();
+                this.drawPlayer();
+            }
+
+            gameLoop() {
+                if (this.gameRunning) {
+                    this.updatePlayer();
+                    this.updatePlatforms();
+                }
+                
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+
+        // Start the game
+        new ShadowJumper();
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'980f022a22bc794d',t:'MTc1ODE3OTI2OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
